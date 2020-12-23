@@ -482,9 +482,8 @@ bool AgilentOscilloscope::AcquireData()
 		if(!IsChannelEnabled(i))
 			continue;
 
-		// Set source & get preamble
-		m_transport->SendCommand(":WAV:SOUR " + m_channels[i]->GetHwname());
-		m_transport->SendCommand(":WAV:PRE?");
+        //Set source and request preamble and data in one command.
+		m_transport->SendCommand(":WAV:SOUR " + m_channels[i]->GetHwname() + ";:WAV:PRE?;:WAV:DATA?");
 		string reply = m_transport->ReadReply();
 		sscanf(reply.c_str(), "%u,%u,%zu,%u,%lf,%lf,%lf,%lf,%lf,%lf",
 				&format, &type, &length, &average_count, &xincrement, &xorigin, &xreference, &yincrement, &yorigin, &yreference);
@@ -503,9 +502,6 @@ bool AgilentOscilloscope::AcquireData()
 		cap->m_startTimestamp = time(NULL);
 		double t = GetTime();
 		cap->m_startFemtoseconds = (t - floor(t)) * FS_PER_SECOND;
-
-		//Ask for the data
-		m_transport->SendCommand(":WAV:DATA?");
 
 		//Read the length header
 		char tmp[16] = {0};
@@ -539,6 +535,14 @@ bool AgilentOscilloscope::AcquireData()
 		delete[] temp_buf;
 	}
 
+
+	//Re-arm the trigger if not in one-shot mode
+	if(!m_triggerOneShot)
+	{
+		m_transport->SendCommand(":SING");
+		m_triggerArmed = true;
+	}
+
 	//Now that we have all of the pending waveforms, save them in sets across all channels
 	m_pendingWaveformsMutex.lock();
 	size_t num_pending = 1;	//TODO: segmented capture mode
@@ -555,13 +559,6 @@ bool AgilentOscilloscope::AcquireData()
 	m_pendingWaveformsMutex.unlock();
 
 	//TODO: support digital channels
-
-	//Re-arm the trigger if not in one-shot mode
-	if(!m_triggerOneShot)
-	{
-		m_transport->SendCommand(":SING");
-		m_triggerArmed = true;
-	}
 
 	//LogDebug("Acquisition done\n");
 	return true;
